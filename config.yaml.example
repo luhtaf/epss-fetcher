@@ -1,0 +1,54 @@
+# EPSS Fetcher Configuration
+# ==========================
+
+# Worker Configuration
+workers:
+  fetchers: 5      # Number of concurrent API fetcher workers
+  processors: 2    # Number of concurrent bulk processor workers
+
+# Bulk Processing Configuration
+bulk:
+  size: 2000       # Number of records per bulk operation
+  timeout: 30s     # Timeout for bulk operations
+
+# Output Strategy: "elasticsearch" or "json"
+strategy: "elasticsearch"
+
+# EPSS API Configuration
+api:
+  base_url: "https://api.first.org/data/v1/epss"
+  rate_limit: 1s   # Minimum delay between API requests
+  timeout: 30s     # HTTP request timeout
+  page_size: 100   # Records per API request
+  max_retries: 3   # Maximum retry attempts for failed requests
+
+# Elasticsearch Configuration (used when strategy = "elasticsearch")
+elasticsearch:
+  hosts:
+    - "http://localhost:9200"
+  index: "epss-scores"
+  username: ""     # Optional: set via EPSS_ELASTIC_USERNAME env var
+  password: ""     # Optional: set via EPSS_ELASTIC_PASSWORD env var
+  timeout: 60s     # Elasticsearch request timeout
+
+# JSON Configuration (used when strategy = "json")
+json:
+  output_dir: "./output"                    # Directory to save JSON files
+  file_pattern: "epss_bulk_%03d.json"       # File naming pattern
+  format: "array"                           # "array" or "ndjson"
+
+# Retry Configuration
+retry:
+  max_retries: 3   # Maximum retry attempts
+  delay: 1s        # Initial delay between retries
+  backoff: 2.0     # Exponential backoff multiplier
+
+# Logging Configuration
+logging:
+  level: "info"              # Log level
+  output_file: "./stats.txt" # File to save processing statistics
+
+# Checkpoint Configuration
+checkpoint:
+  enabled: true              # Enable checkpoint for resume capability
+  file_path: "./checkpoint.json" # Checkpoint file location

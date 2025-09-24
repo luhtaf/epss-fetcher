@@ -1,0 +1,37 @@
+# EPSS Fetcher - JSON Output Configuration
+# =========================================
+
+workers:
+  fetchers: 2    # Test with fewer workers
+  processors: 1  # JSON writes are typically faster
+
+bulk:
+  size: 200      # Smaller batches for testing
+  timeout: 30s
+
+strategy: "json"
+
+api:
+  base_url: "https://api.first.org/data/v1/epss"
+  rate_limit: 2s     # Slower for API courtesy
+  timeout: 30s
+  page_size: 10      # Smaller page size for testing
+  max_retries: 3
+
+json:
+  output_dir: "./epss-data"
+  file_pattern: "epss_batch_%04d.json"
+  format: "ndjson"  # More efficient for large datasets
+
+retry:
+  max_retries: 3
+  delay: 1s
+  backoff: 2.0
+
+logging:
+  level: "info"
+  output_file: "./json-stats.txt"
+
+checkpoint:
+  enabled: true
+  file_path: "./json-checkpoint.json"

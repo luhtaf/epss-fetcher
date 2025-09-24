@@ -1,0 +1,40 @@
+# EPSS Fetcher - Elasticsearch Configuration
+# ==========================================
+
+workers:
+  fetchers: 8
+  processors: 4
+
+bulk:
+  size: 5000
+  timeout: 60s
+
+strategy: "elasticsearch"
+
+api:
+  base_url: "https://api.first.org/data/v1/epss"
+  rate_limit: 500ms
+  timeout: 30s
+  page_size: 100
+  max_retries: 5
+
+elasticsearch:
+  hosts:
+    - "http://localhost:9200"
+  index: "epss-scores"
+  username: ""  # Set via EPSS_ELASTIC_USERNAME
+  password: ""  # Set via EPSS_ELASTIC_PASSWORD
+  timeout: 120s
+
+retry:
+  max_retries: 5
+  delay: 2s
+  backoff: 1.5
+
+logging:
+  level: "info"
+  output_file: "./elasticsearch-stats.txt"
+
+checkpoint:
+  enabled: true
+  file_path: "./elasticsearch-checkpoint.json"
