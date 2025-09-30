@@ -25,9 +25,14 @@ config.yaml
 # Data and output files
 output/
 epss-data/
-*.json
-!go.mod
-!go.sum
+# JSON data files (but keep config JSONs)
+*batch*.json
+*checkpoint*.json
+*stats*.json
+test-*.json
+elasticsearch-*.json
+# Keep go.mod and go.sum (they're not JSON anyway)
+# go.mod and go.sum are automatically included
 
 # Logs and stats
 *.log

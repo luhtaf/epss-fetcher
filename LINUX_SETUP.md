@@ -1,22 +1,54 @@
 # EPSS Fetcher - Linux Troubleshooting Guide
 
-## 🐛 Common Issues & Solutions
+## � CRITICAL: "no matching versions" Error Fix
 
-### Issue 1: "no matching versions for query" Error
+### Issue: Go Module Import Resolution Failure
 ```bash
-go: github.com/luhtaf/epss-fetcher/output: no matching versions for query "upgrade"
+go: github.com/luhtaf/epss-fetcher/output: no matching versions for query "latest"
 ```
 
-**Solution:**
+**Root Cause:** Go is trying to download local packages from remote repository.
+
+## 🔧 **SOLUTION 1: Use Emergency Fix Script**
 ```bash
-# Step 1: Clean and reinitialize
+chmod +x fix-linux.sh
+./fix-linux.sh
+```
+
+## 🔧 **SOLUTION 2: Use Build Diagnosis Script**
+```bash
+chmod +x diagnose-build.sh
+./diagnose-build.sh
+```
+
+## 🔧 **SOLUTION 3: Manual Step-by-Step Fix**
+
+### Step 1: Set Go Proxy to Direct
+```bash
+export GOPROXY=direct
+export GOSUMDB=off
+```
+
+### Step 2: Clean and Reinitialize with Simple Module Name
+```bash
 rm -f go.mod go.sum
-go mod init github.com/luhtaf/epss-fetcher
+go mod init epss-fetcher  # Use simple name, not GitHub path
+```
 
-# Step 2: Add dependencies
-go mod tidy
+### Step 3: Add External Dependencies Only
+```bash
+go get github.com/schollz/progressbar/v3@v3.14.1
+go get gopkg.in/yaml.v3@v3.0.1
+```
 
-# Step 3: Build
+### Step 4: Fix Import Paths in Source Files
+```bash
+# Replace all GitHub import paths with relative paths
+find . -name "*.go" -exec sed -i 's|github.com/luhtaf/epss-fetcher/|./|g' {} \;
+```
+
+### Step 5: Build
+```bash
 go build -o epss-fetcher
 ```
 
