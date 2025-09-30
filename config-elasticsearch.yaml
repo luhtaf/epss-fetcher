@@ -20,11 +20,13 @@ api:
 
 elasticsearch:
   hosts:
-    - "http://localhost:9200"
+    - "https://10.12.20.213:9200"
   index: "epss-scores"
-  username: ""  # Set via EPSS_ELASTIC_USERNAME
-  password: ""  # Set via EPSS_ELASTIC_PASSWORD
+  username: "admin"  # Set via EPSS_ELASTIC_USERNAME
+  password: "admin123"  # Set via EPSS_ELASTIC_PASSWORD
   timeout: 120s
+  skip_tls_verify: true  # Skip SSL certificate verification
+  ca_cert_path: ""       # Path to custom CA certificate (optional)
 
 retry:
   max_retries: 5

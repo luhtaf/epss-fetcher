@@ -85,6 +85,14 @@ func (m *Manager) UpdateProgress(offset, total, processed int) {
 	m.checkpoint.Processed = processed
 }
 
+func (m *Manager) UpdateMode(mode, date string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.checkpoint.Mode = mode
+	m.checkpoint.LastDataDate = date
+}
+
 func (m *Manager) AddFailedRecord(record string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

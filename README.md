@@ -65,10 +65,12 @@ cp config.yaml.example config.yaml
 Sensitive configuration can be set via environment variables:
 
 ```bash
-export EPSS_ELASTIC_HOSTS="http://elasticsearch:9200"
+export EPSS_ELASTIC_HOSTS="https://elasticsearch:9200"
 export EPSS_ELASTIC_USERNAME="elastic"
 export EPSS_ELASTIC_PASSWORD="password"
 export EPSS_ELASTIC_INDEX="epss-scores"
+export EPSS_ELASTIC_SKIP_TLS_VERIFY="true"
+export EPSS_ELASTIC_CA_CERT_PATH="/path/to/ca.crt"
 export EPSS_STRATEGY="elasticsearch"
 export EPSS_WORKERS_FETCHERS="10"
 export EPSS_WORKERS_PROCESSORS="4"
@@ -82,11 +84,18 @@ export EPSS_WORKERS_PROCESSORS="4"
 strategy: "elasticsearch"
 elasticsearch:
   hosts:
-    - "http://localhost:9200"
+    - "https://localhost:9200"
   index: "epss-scores"
   username: "elastic"
   password: "password"
+  skip_tls_verify: true    # Skip SSL certificate verification
+  ca_cert_path: ""         # Path to custom CA certificate (optional)
 ```
+
+**TLS/SSL Options:**
+- `skip_tls_verify: true` - For self-signed certificates or testing
+- `ca_cert_path: "/path/to/ca.crt"` - For custom CA certificates
+- Environment variables: `EPSS_ELASTIC_SKIP_TLS_VERIFY=true`
 
 #### JSON Files
 

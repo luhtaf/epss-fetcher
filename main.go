@@ -16,6 +16,8 @@ func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.yaml", "Path to configuration file")
 	reset := flag.Bool("reset", false, "Reset checkpoint and start from beginning")
+	targetDate := flag.String("date", "", "Target date for incremental update (YYYY-MM-DD), empty for auto-detect")
+	incremental := flag.Bool("incremental", false, "Force incremental mode (fetch only new data since last checkpoint)")
 	flag.Parse()
 
 	// Load configuration
@@ -58,7 +60,7 @@ func main() {
 
 	// Run the orchestrator
 	log.Println("Starting EPSS fetcher...")
-	if err := orch.Run(ctx); err != nil && err != context.Canceled {
+	if err := orch.RunWithMode(ctx, *targetDate, *incremental); err != nil && err != context.Canceled {
 		log.Printf("Orchestrator error: %v", err)
 		os.Exit(1)
 	}

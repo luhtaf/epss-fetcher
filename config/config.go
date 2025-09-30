@@ -40,11 +40,13 @@ type APIConfig struct {
 }
 
 type ElasticsearchConfig struct {
-	Hosts    []string      `yaml:"hosts"`
-	Index    string        `yaml:"index"`
-	Username string        `yaml:"username"`
-	Password string        `yaml:"password"`
-	Timeout  time.Duration `yaml:"timeout"`
+	Hosts           []string      `yaml:"hosts"`
+	Index           string        `yaml:"index"`
+	Username        string        `yaml:"username"`
+	Password        string        `yaml:"password"`
+	Timeout         time.Duration `yaml:"timeout"`
+	SkipTLSVerify   bool          `yaml:"skip_tls_verify"`
+	CACertPath      string        `yaml:"ca_cert_path"`
 }
 
 type JSONConfig struct {
@@ -103,6 +105,14 @@ func (c *Config) overrideWithEnv() {
 	}
 	if val := os.Getenv("EPSS_ELASTIC_INDEX"); val != "" {
 		c.Elastic.Index = val
+	}
+	if val := os.Getenv("EPSS_ELASTIC_SKIP_TLS_VERIFY"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			c.Elastic.SkipTLSVerify = b
+		}
+	}
+	if val := os.Getenv("EPSS_ELASTIC_CA_CERT_PATH"); val != "" {
+		c.Elastic.CACertPath = val
 	}
 	if val := os.Getenv("EPSS_WORKERS_FETCHERS"); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {

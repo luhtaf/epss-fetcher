@@ -30,6 +30,8 @@ type Checkpoint struct {
 	Processed     int       `json:"processed"`
 	LastUpdated   time.Time `json:"last_updated"`
 	StartTime     time.Time `json:"start_time"`
+	LastDataDate  string    `json:"last_data_date,omitempty"`  // YYYY-MM-DD format
+	Mode          string    `json:"mode"`                       // "full" or "incremental"
 	FailedRecords []string  `json:"failed_records,omitempty"`
 }
 

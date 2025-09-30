@@ -27,9 +27,11 @@ elasticsearch:
   hosts:
     - "http://localhost:9200"
   index: "epss-scores"
-  username: ""     # Optional: set via EPSS_ELASTIC_USERNAME env var
-  password: ""     # Optional: set via EPSS_ELASTIC_PASSWORD env var
-  timeout: 60s     # Elasticsearch request timeout
+  username: ""           # Optional: set via EPSS_ELASTIC_USERNAME env var
+  password: ""           # Optional: set via EPSS_ELASTIC_PASSWORD env var
+  timeout: 60s           # Elasticsearch request timeout
+  skip_tls_verify: false # Skip SSL certificate verification (for self-signed certs)
+  ca_cert_path: ""       # Path to custom CA certificate file (optional)
 
 # JSON Configuration (used when strategy = "json")
 json:
