@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"epss-fetcher/config"
-	"epss-fetcher/orchestrator"
+	"epss-fetcher-app/config"
+	"epss-fetcher-app/orchestrator"
 )
 
 func main() {

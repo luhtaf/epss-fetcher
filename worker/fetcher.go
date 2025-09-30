@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"epss-fetcher/client"
-	"epss-fetcher/config"
-	"epss-fetcher/models"
+	"epss-fetcher-app/client"
+	"epss-fetcher-app/config"
+	"epss-fetcher-app/models"
 )
 
 type FetcherPool struct {

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"epss-fetcher/models"
+	"epss-fetcher-app/models"
 )
 
 type Tracker struct {
