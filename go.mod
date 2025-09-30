@@ -1,4 +1,4 @@
-module epss-fetcher-app
+module example.com/epss-fetcher
 
 go 1.21
 

@@ -8,12 +8,12 @@ import (
 
 	"github.com/schollz/progressbar/v3"
 
-	"epss-fetcher-app/checkpoint"
-	"epss-fetcher-app/client"
-	"epss-fetcher-app/config"
-	"epss-fetcher-app/output"
-	"epss-fetcher-app/stats"
-	"epss-fetcher-app/worker"
+	"example.com/epss-fetcher/checkpoint"
+	"example.com/epss-fetcher/client"
+	"example.com/epss-fetcher/config"
+	"example.com/epss-fetcher/output"
+	"example.com/epss-fetcher/stats"
+	"example.com/epss-fetcher/worker"
 )
 
 type Orchestrator struct {
