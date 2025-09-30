@@ -1,4 +1,4 @@
-module github.com/luhtaf/epss-fetcher
+module epss-fetcher
 
 go 1.21
 

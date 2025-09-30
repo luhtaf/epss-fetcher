@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/luhtaf/epss-fetcher/client"
-	"github.com/luhtaf/epss-fetcher/config"
-	"github.com/luhtaf/epss-fetcher/models"
+	"epss-fetcher/client"
+	"epss-fetcher/config"
+	"epss-fetcher/models"
 )
 
 type FetcherPool struct {

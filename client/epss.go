@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/luhtaf/epss-fetcher/config"
-	"github.com/luhtaf/epss-fetcher/models"
+	"epss-fetcher/config"
+	"epss-fetcher/models"
 )
 
 type EPSSClient struct {
