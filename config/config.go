@@ -40,13 +40,13 @@ type APIConfig struct {
 }
 
 type ElasticsearchConfig struct {
-	Hosts           []string      `yaml:"hosts"`
-	Index           string        `yaml:"index"`
-	Username        string        `yaml:"username"`
-	Password        string        `yaml:"password"`
-	Timeout         time.Duration `yaml:"timeout"`
-	SkipTLSVerify   bool          `yaml:"skip_tls_verify"`
-	CACertPath      string        `yaml:"ca_cert_path"`
+	Hosts         []string      `yaml:"hosts"`
+	Index         string        `yaml:"index"`
+	Username      string        `yaml:"username"`
+	Password      string        `yaml:"password"`
+	Timeout       time.Duration `yaml:"timeout"`
+	SkipTLSVerify bool          `yaml:"skip_tls_verify"`
+	CACertPath    string        `yaml:"ca_cert_path"`
 }
 
 type JSONConfig struct {

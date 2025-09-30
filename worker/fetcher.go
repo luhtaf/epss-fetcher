@@ -96,13 +96,13 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 
 func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models.EPSSData, error) {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= fp.config.Retry.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// Wait before retry with exponential backoff
-			delay := time.Duration(float64(fp.config.Retry.Delay) * 
+			delay := time.Duration(float64(fp.config.Retry.Delay) *
 				(fp.config.Retry.Backoff * float64(attempt)))
-			
+
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():
@@ -112,7 +112,7 @@ func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models
 
 		var resp *models.EPSSResponse
 		var err error
-		
+
 		if fp.fetchDate != "" {
 			// Date-based incremental fetch
 			resp, err = fp.client.FetchEPSSDataByDate(ctx, fp.fetchDate, offset, fp.config.API.PageSize)
@@ -120,7 +120,7 @@ func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models
 			// Full fetch
 			resp, err = fp.client.FetchEPSSData(ctx, offset, fp.config.API.PageSize)
 		}
-		
+
 		if err != nil {
 			lastErr = err
 			continue

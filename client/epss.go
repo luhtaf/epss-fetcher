@@ -110,7 +110,7 @@ func (c *EPSSClient) FetchEPSSDataByDate(ctx context.Context, date string, offse
 	} else {
 		url = fmt.Sprintf("%s?offset=%d&limit=%d", c.config.BaseURL, offset, limit)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

@@ -61,7 +61,7 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 
 	// Load existing checkpoint to determine mode
 	checkpoint := o.checkpointMgr.GetCheckpoint()
-	
+
 	var (
 		mode         string
 		fetchDate    string
@@ -76,26 +76,26 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 		mode = "incremental"
 		fetchDate = targetDate
 		log.Printf("Running in incremental mode for date: %s", fetchDate)
-		
+
 		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
 		if err != nil {
 			return fmt.Errorf("failed to get total records for date %s: %w", fetchDate, err)
 		}
 		startOffset = 0 // Always start from 0 for date-based queries
-		
+
 	} else if forceIncremental && checkpoint.LastDataDate != "" {
 		// Incremental mode: fetch from last checkpoint date to today
 		mode = "incremental"
 		today := time.Now().Format("2006-01-02")
-		
+
 		if checkpoint.LastDataDate == today {
 			log.Printf("Data already up to date (last update: %s)", checkpoint.LastDataDate)
 			return nil
 		}
-		
+
 		fetchDate = today
 		log.Printf("Running incremental update from %s to %s", checkpoint.LastDataDate, today)
-		
+
 		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
 		if err != nil {
 			log.Printf("Failed to get records for today (%s), falling back to full mode", today)
@@ -103,19 +103,19 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 		} else {
 			startOffset = 0
 		}
-		
+
 	} else if checkpoint.LastDataDate == "" || checkpoint.Mode == "" {
 		// No checkpoint or old checkpoint format: full mode
 		mode = "full"
 		fetchDate = ""
 		log.Println("No valid checkpoint found, running full mode")
-		
+
 		totalRecords, err = o.client.GetTotalRecords(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get total records: %w", err)
 		}
 		startOffset = checkpoint.Offset
-		
+
 	} else {
 		// Continue from existing checkpoint
 		mode = checkpoint.Mode
@@ -141,7 +141,7 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 	}
 
 	o.statsTracker.SetTotal(totalRecords)
-	log.Printf("Mode: %s, Date: %s, Total records: %d, Starting offset: %d", 
+	log.Printf("Mode: %s, Date: %s, Total records: %d, Starting offset: %d",
 		mode, fetchDate, totalRecords, startOffset)
 
 	// Update checkpoint with current mode
