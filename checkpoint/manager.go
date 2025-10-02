@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"example.com/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/models"
 )
 
 type Manager struct {

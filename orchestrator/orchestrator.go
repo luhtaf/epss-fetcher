@@ -8,12 +8,13 @@ import (
 
 	"github.com/schollz/progressbar/v3"
 
-	"example.com/epss-fetcher/checkpoint"
-	"example.com/epss-fetcher/client"
-	"example.com/epss-fetcher/config"
-	"example.com/epss-fetcher/output"
-	"example.com/epss-fetcher/stats"
-	"example.com/epss-fetcher/worker"
+	"github.com/luhtaf/epss-fetcher/checkpoint"
+	"github.com/luhtaf/epss-fetcher/client"
+	"github.com/luhtaf/epss-fetcher/config"
+	"github.com/luhtaf/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/output"
+	"github.com/luhtaf/epss-fetcher/stats"
+	"github.com/luhtaf/epss-fetcher/worker"
 )
 
 type Orchestrator struct {
@@ -70,74 +71,16 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 		err          error
 	)
 
-	// Smart mode detection
-	if targetDate != "" {
-		// Explicit date provided
-		mode = "incremental"
-		fetchDate = targetDate
-		log.Printf("Running in incremental mode for date: %s", fetchDate)
+	// Determine execution mode and parameters
+	mode, fetchDate, totalRecords, startOffset, err = o.determineExecutionMode(ctx, targetDate, forceIncremental, checkpoint)
+	if err != nil {
+		return err
+	}
 
-		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
-		if err != nil {
-			return fmt.Errorf("failed to get total records for date %s: %w", fetchDate, err)
-		}
-		startOffset = 0 // Always start from 0 for date-based queries
-
-	} else if forceIncremental && checkpoint.LastDataDate != "" {
-		// Incremental mode: fetch from last checkpoint date to today
-		mode = "incremental"
-		today := time.Now().Format("2006-01-02")
-
-		if checkpoint.LastDataDate == today {
-			log.Printf("Data already up to date (last update: %s)", checkpoint.LastDataDate)
-			return nil
-		}
-
-		fetchDate = today
-		log.Printf("Running incremental update from %s to %s", checkpoint.LastDataDate, today)
-
-		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
-		if err != nil {
-			log.Printf("Failed to get records for today (%s), falling back to full mode", today)
-			mode = "full"
-		} else {
-			startOffset = 0
-		}
-
-	} else if checkpoint.LastDataDate == "" || checkpoint.Mode == "" {
-		// No checkpoint or old checkpoint format: full mode
-		mode = "full"
-		fetchDate = ""
-		log.Println("No valid checkpoint found, running full mode")
-
-		totalRecords, err = o.client.GetTotalRecords(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get total records: %w", err)
-		}
-		startOffset = checkpoint.Offset
-
-	} else {
-		// Continue from existing checkpoint
-		mode = checkpoint.Mode
-		fetchDate = checkpoint.LastDataDate
-		if mode == "incremental" && fetchDate != "" {
-			totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
-			if err != nil {
-				log.Printf("Failed to resume incremental mode, switching to full mode")
-				mode = "full"
-				fetchDate = ""
-				totalRecords, err = o.client.GetTotalRecords(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get total records: %w", err)
-				}
-			}
-		} else {
-			totalRecords, err = o.client.GetTotalRecords(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get total records: %w", err)
-			}
-		}
-		startOffset = checkpoint.Offset
+	// Check if execution should be skipped
+	if mode == "skip" {
+		log.Printf("Data already up to date (last update: %s)", checkpoint.LastDataDate)
+		return nil
 	}
 
 	o.statsTracker.SetTotal(totalRecords)
@@ -162,17 +105,25 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 	processorPool := worker.NewProcessorPool(o.config, o.outputStrategy)
 	processErrorChan := processorPool.Start(ctx, dataChan)
 
+	// Create completion channel
+	completionChan := make(chan bool, 1)
+
 	// Start offset generator
 	go o.generateOffsets(ctx, offsetChan, startOffset, totalRecords)
 
 	// Start error handlers
 	go o.handleErrors(ctx, fetchErrorChan, processErrorChan)
 
-	// Monitor progress
-	go o.monitorProgress(ctx, progressBar, startOffset, totalRecords)
+	// Monitor progress and completion
+	go o.monitorProgress(ctx, progressBar, startOffset, totalRecords, completionChan)
 
 	// Wait for completion or cancellation
-	<-ctx.Done()
+	select {
+	case <-completionChan:
+		log.Println("Processing completed successfully")
+	case <-ctx.Done():
+		log.Println("Processing cancelled")
+	}
 
 	// Cleanup
 	fetcherPool.Close()
@@ -223,11 +174,14 @@ func (o *Orchestrator) handleErrors(ctx context.Context, fetchErrorChan, process
 	}
 }
 
-func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progressbar.ProgressBar, startOffset, totalRecords int) {
+func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progressbar.ProgressBar, startOffset, totalRecords int, completionChan chan<- bool) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	lastProcessed := 0
+	noProgressCount := 0
+	const maxNoProgressTicks = 12 // 60 seconds of no progress = completion
+
 	for {
 		select {
 		case <-ticker.C:
@@ -238,6 +192,10 @@ func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progres
 			if processed > lastProcessed {
 				progressBar.Add(processed - lastProcessed)
 				lastProcessed = processed
+				noProgressCount = 0 // Reset no-progress counter
+			} else {
+				noProgressCount++
+				log.Printf("No progress detected (count: %d/%d)", noProgressCount, maxNoProgressTicks)
 			}
 
 			// Update checkpoint
@@ -247,6 +205,26 @@ func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progres
 			// Save checkpoint periodically
 			if err := o.checkpointMgr.Save(); err != nil {
 				log.Printf("Failed to save checkpoint: %v", err)
+			}
+
+			// Check for completion - no progress for extended period
+			if noProgressCount >= maxNoProgressTicks {
+				log.Printf("No progress for %d seconds, assuming completion", maxNoProgressTicks*5)
+				select {
+				case completionChan <- true:
+				default:
+				}
+				return
+			}
+
+			// Also check if we've processed all expected records
+			if processed >= totalRecords {
+				log.Printf("All expected records processed (%d/%d)", processed, totalRecords)
+				select {
+				case completionChan <- true:
+				default:
+				}
+				return
 			}
 
 		case <-ctx.Done():
@@ -260,4 +238,108 @@ func (o *Orchestrator) Close() error {
 		return o.outputStrategy.Close()
 	}
 	return nil
+}
+
+// determineExecutionMode determines the execution mode and parameters based on input
+func (o *Orchestrator) determineExecutionMode(ctx context.Context, targetDate string, forceIncremental bool, checkpoint models.Checkpoint) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	if targetDate != "" {
+		return o.handleExplicitDateMode(ctx, targetDate)
+	}
+
+	if forceIncremental && checkpoint.LastDataDate != "" {
+		return o.handleIncrementalMode(ctx, checkpoint)
+	}
+
+	if checkpoint.LastDataDate == "" || checkpoint.Mode == "" {
+		return o.handleFreshStartMode(ctx, checkpoint)
+	}
+
+	return o.handleResumeMode(ctx, checkpoint)
+}
+
+// handleExplicitDateMode handles when a specific date is provided
+func (o *Orchestrator) handleExplicitDateMode(ctx context.Context, targetDate string) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	mode = "incremental"
+	fetchDate = targetDate
+	log.Printf("Running in incremental mode for date: %s", fetchDate)
+
+	totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
+	if err != nil {
+		err = fmt.Errorf("failed to get total records for date %s: %w", fetchDate, err)
+		return
+	}
+	startOffset = 0 // Always start from 0 for date-based queries
+	return
+}
+
+// handleIncrementalMode handles incremental mode with date detection
+func (o *Orchestrator) handleIncrementalMode(ctx context.Context, checkpoint models.Checkpoint) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	mode = "incremental"
+	today := time.Now().Format("2006-01-02")
+
+	if checkpoint.LastDataDate == today {
+		mode = "skip" // Signal to skip execution
+		return
+	}
+
+	fetchDate = today
+	log.Printf("Running incremental update from %s to %s", checkpoint.LastDataDate, today)
+
+	totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
+	if err != nil {
+		log.Printf("Failed to get records for today (%s), falling back to full mode", today)
+		return o.handleFullModeFallback(ctx, checkpoint)
+	}
+	startOffset = 0
+	return
+}
+
+// handleFreshStartMode handles full mode for new checkpoints
+func (o *Orchestrator) handleFreshStartMode(ctx context.Context, checkpoint models.Checkpoint) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	mode = "full"
+	fetchDate = ""
+	log.Println("No valid checkpoint found, running full mode")
+
+	totalRecords, err = o.client.GetTotalRecords(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get total records: %w", err)
+		return
+	}
+	startOffset = checkpoint.Offset
+	return
+}
+
+// handleResumeMode handles resuming from existing checkpoint
+func (o *Orchestrator) handleResumeMode(ctx context.Context, checkpoint models.Checkpoint) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	mode = checkpoint.Mode
+	fetchDate = checkpoint.LastDataDate
+
+	if mode == "incremental" && fetchDate != "" {
+		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
+		if err != nil {
+			log.Printf("Failed to resume incremental mode, switching to full mode")
+			return o.handleFullModeFallback(ctx, checkpoint)
+		}
+	} else {
+		totalRecords, err = o.client.GetTotalRecords(ctx)
+		if err != nil {
+			err = fmt.Errorf("failed to get total records: %w", err)
+			return
+		}
+	}
+	startOffset = checkpoint.Offset
+	return
+}
+
+// handleFullModeFallback handles fallback to full mode
+func (o *Orchestrator) handleFullModeFallback(ctx context.Context, checkpoint models.Checkpoint) (mode, fetchDate string, totalRecords, startOffset int, err error) {
+	mode = "full"
+	fetchDate = ""
+	totalRecords, err = o.client.GetTotalRecords(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get total records: %w", err)
+		return
+	}
+	startOffset = checkpoint.Offset
+	return
 }

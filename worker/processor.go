@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"example.com/epss-fetcher/config"
-	"example.com/epss-fetcher/models"
-	"example.com/epss-fetcher/output"
+	"github.com/luhtaf/epss-fetcher/config"
+	"github.com/luhtaf/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/output"
 )
 
 type ProcessorPool struct {

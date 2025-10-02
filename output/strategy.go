@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"example.com/epss-fetcher/config"
-	"example.com/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/config"
+	"github.com/luhtaf/epss-fetcher/models"
 )
 
 // Strategy defines the interface for output strategies

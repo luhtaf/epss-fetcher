@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 
-	"example.com/epss-fetcher/config"
-	"example.com/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/config"
+	"github.com/luhtaf/epss-fetcher/models"
 )
 
 type ElasticsearchStrategy struct {

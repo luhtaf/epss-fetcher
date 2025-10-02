@@ -1,4 +1,4 @@
-module example.com/epss-fetcher
+module github.com/luhtaf/epss-fetcher
 
 go 1.21
 

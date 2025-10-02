@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"example.com/epss-fetcher/client"
-	"example.com/epss-fetcher/config"
-	"example.com/epss-fetcher/models"
+	"github.com/luhtaf/epss-fetcher/client"
+	"github.com/luhtaf/epss-fetcher/config"
+	"github.com/luhtaf/epss-fetcher/models"
 )
 
 type FetcherPool struct {
@@ -86,6 +86,10 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 						return
 					}
 				}
+			} else {
+				// Empty data received - API has no more records
+				log.Printf("Worker %d: Received empty data at offset %d, API exhausted", workerID, offset)
+				// Don't send empty data, just continue to next offset
 			}
 
 		case <-ctx.Done():
@@ -124,6 +128,13 @@ func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models
 		if err != nil {
 			lastErr = err
 			continue
+		}
+
+		// Check if we've reached the end of available data
+		if len(resp.Data) == 0 || offset >= resp.Total {
+			log.Printf("Reached end of data: offset=%d, total=%d, received=%d records",
+				offset, resp.Total, len(resp.Data))
+			return resp.Data, nil // Return empty data to signal completion
 		}
 
 		return resp.Data, nil
