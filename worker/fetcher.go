@@ -12,33 +12,33 @@ import (
 )
 
 type FetcherPool struct {
-	client        *client.EPSSClient
-	config        *config.Config
-	outputChan    chan []models.EPSSData
-	errorChan     chan error
+	client         *client.EPSSClient
+	config         *config.Config
+	outputChan     chan []models.EPSSData
+	errorChan      chan error
 	completionChan chan bool
-	fetchDate     string // Empty for full mode, YYYY-MM-DD for incremental
+	fetchDate      string // Empty for full mode, YYYY-MM-DD for incremental
 }
 
 func NewFetcherPool(client *client.EPSSClient, cfg *config.Config) *FetcherPool {
 	return &FetcherPool{
-		client:        client,
-		config:        cfg,
-		outputChan:    make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
-		errorChan:     make(chan error, cfg.Workers.Fetchers),
+		client:         client,
+		config:         cfg,
+		outputChan:     make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
+		errorChan:      make(chan error, cfg.Workers.Fetchers),
 		completionChan: make(chan bool, 1), // Buffer for completion signal
-		fetchDate:     "", // Full mode
+		fetchDate:      "",                 // Full mode
 	}
 }
 
 func NewFetcherPoolWithDate(client *client.EPSSClient, cfg *config.Config, date string) *FetcherPool {
 	return &FetcherPool{
-		client:        client,
-		config:        cfg,
-		outputChan:    make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
-		errorChan:     make(chan error, cfg.Workers.Fetchers),
+		client:         client,
+		config:         cfg,
+		outputChan:     make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
+		errorChan:      make(chan error, cfg.Workers.Fetchers),
 		completionChan: make(chan bool, 1), // Buffer for completion signal
-		fetchDate:     date, // Incremental mode
+		fetchDate:      date,               // Incremental mode
 	}
 }
 
@@ -92,7 +92,7 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 			} else {
 				// Empty data received - API has no more records
 				log.Printf("Worker %d: Received empty data at offset %d, API exhausted - signaling completion", workerID, offset)
-				
+
 				// Send completion signal (non-blocking)
 				select {
 				case fp.completionChan <- true:
@@ -100,7 +100,7 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 				default:
 					// Channel might be full, that's ok - another worker already signaled
 				}
-				
+
 				// Exit this worker since API is exhausted
 				return
 			}

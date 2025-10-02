@@ -171,7 +171,6 @@ func (o *Orchestrator) handleErrors(ctx context.Context, fetchErrorChan, process
 	}
 }
 
-
 func (o *Orchestrator) monitorProgressSimple(ctx context.Context, progressBar *progressbar.ProgressBar, startOffset, totalRecords int) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
