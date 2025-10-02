@@ -23,7 +23,7 @@ config.yaml
 !config-*.yaml
 
 # Data and output files
-output/
+# output/
 epss-data/
 # JSON data files (but keep config JSONs)
 *batch*.json
