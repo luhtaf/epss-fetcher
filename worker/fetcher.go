@@ -12,40 +12,43 @@ import (
 )
 
 type FetcherPool struct {
-	client     *client.EPSSClient
-	config     *config.Config
-	outputChan chan []models.EPSSData
-	errorChan  chan error
-	fetchDate  string // Empty for full mode, YYYY-MM-DD for incremental
+	client        *client.EPSSClient
+	config        *config.Config
+	outputChan    chan []models.EPSSData
+	errorChan     chan error
+	completionChan chan bool
+	fetchDate     string // Empty for full mode, YYYY-MM-DD for incremental
 }
 
 func NewFetcherPool(client *client.EPSSClient, cfg *config.Config) *FetcherPool {
 	return &FetcherPool{
-		client:     client,
-		config:     cfg,
-		outputChan: make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
-		errorChan:  make(chan error, cfg.Workers.Fetchers),
-		fetchDate:  "", // Full mode
+		client:        client,
+		config:        cfg,
+		outputChan:    make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
+		errorChan:     make(chan error, cfg.Workers.Fetchers),
+		completionChan: make(chan bool, 1), // Buffer for completion signal
+		fetchDate:     "", // Full mode
 	}
 }
 
 func NewFetcherPoolWithDate(client *client.EPSSClient, cfg *config.Config, date string) *FetcherPool {
 	return &FetcherPool{
-		client:     client,
-		config:     cfg,
-		outputChan: make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
-		errorChan:  make(chan error, cfg.Workers.Fetchers),
-		fetchDate:  date, // Incremental mode
+		client:        client,
+		config:        cfg,
+		outputChan:    make(chan []models.EPSSData, cfg.Workers.Fetchers*2), // Buffer for smooth flow
+		errorChan:     make(chan error, cfg.Workers.Fetchers),
+		completionChan: make(chan bool, 1), // Buffer for completion signal
+		fetchDate:     date, // Incremental mode
 	}
 }
 
-func (fp *FetcherPool) Start(ctx context.Context, offsetChan <-chan int, totalRecords int) (<-chan []models.EPSSData, <-chan error) {
+func (fp *FetcherPool) Start(ctx context.Context, offsetChan <-chan int, totalRecords int) (<-chan []models.EPSSData, <-chan error, <-chan bool) {
 	// Start fetcher workers
 	for i := 0; i < fp.config.Workers.Fetchers; i++ {
 		go fp.fetchWorker(ctx, i, offsetChan)
 	}
 
-	return fp.outputChan, fp.errorChan
+	return fp.outputChan, fp.errorChan, fp.completionChan
 }
 
 func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan <-chan int) {
@@ -88,8 +91,18 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 				}
 			} else {
 				// Empty data received - API has no more records
-				log.Printf("Worker %d: Received empty data at offset %d, API exhausted", workerID, offset)
-				// Don't send empty data, just continue to next offset
+				log.Printf("Worker %d: Received empty data at offset %d, API exhausted - signaling completion", workerID, offset)
+				
+				// Send completion signal (non-blocking)
+				select {
+				case fp.completionChan <- true:
+					log.Printf("Worker %d: Completion signal sent", workerID)
+				default:
+					// Channel might be full, that's ok - another worker already signaled
+				}
+				
+				// Exit this worker since API is exhausted
+				return
 			}
 
 		case <-ctx.Done():
@@ -146,4 +159,5 @@ func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models
 func (fp *FetcherPool) Close() {
 	close(fp.outputChan)
 	close(fp.errorChan)
+	close(fp.completionChan)
 }

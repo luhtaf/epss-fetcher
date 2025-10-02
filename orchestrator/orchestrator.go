@@ -99,14 +99,11 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 
 	// Start Stage 1: Fetcher workers with date support
 	fetcherPool := worker.NewFetcherPoolWithDate(o.client, o.config, fetchDate)
-	dataChan, fetchErrorChan := fetcherPool.Start(ctx, offsetChan, totalRecords)
+	dataChan, fetchErrorChan, fetchCompletionChan := fetcherPool.Start(ctx, offsetChan, totalRecords)
 
 	// Start Stage 2: Processor workers
 	processorPool := worker.NewProcessorPool(o.config, o.outputStrategy)
 	processErrorChan := processorPool.Start(ctx, dataChan)
-
-	// Create completion channel
-	completionChan := make(chan bool, 1)
 
 	// Start offset generator
 	go o.generateOffsets(ctx, offsetChan, startOffset, totalRecords)
@@ -114,13 +111,13 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 	// Start error handlers
 	go o.handleErrors(ctx, fetchErrorChan, processErrorChan)
 
-	// Monitor progress and completion
-	go o.monitorProgress(ctx, progressBar, startOffset, totalRecords, completionChan)
+	// Monitor progress (simple version without timeout)
+	go o.monitorProgressSimple(ctx, progressBar, startOffset, totalRecords)
 
 	// Wait for completion or cancellation
 	select {
-	case <-completionChan:
-		log.Println("Processing completed successfully")
+	case <-fetchCompletionChan:
+		log.Println("Processing completed successfully - API data exhausted")
 	case <-ctx.Done():
 		log.Println("Processing cancelled")
 	}
@@ -174,14 +171,12 @@ func (o *Orchestrator) handleErrors(ctx context.Context, fetchErrorChan, process
 	}
 }
 
-func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progressbar.ProgressBar, startOffset, totalRecords int, completionChan chan<- bool) {
+
+func (o *Orchestrator) monitorProgressSimple(ctx context.Context, progressBar *progressbar.ProgressBar, startOffset, totalRecords int) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	lastProcessed := 0
-	noProgressCount := 0
-	const maxNoProgressTicks = 12 // 60 seconds of no progress = completion
-
 	for {
 		select {
 		case <-ticker.C:
@@ -192,10 +187,6 @@ func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progres
 			if processed > lastProcessed {
 				progressBar.Add(processed - lastProcessed)
 				lastProcessed = processed
-				noProgressCount = 0 // Reset no-progress counter
-			} else {
-				noProgressCount++
-				log.Printf("No progress detected (count: %d/%d)", noProgressCount, maxNoProgressTicks)
 			}
 
 			// Update checkpoint
@@ -205,26 +196,6 @@ func (o *Orchestrator) monitorProgress(ctx context.Context, progressBar *progres
 			// Save checkpoint periodically
 			if err := o.checkpointMgr.Save(); err != nil {
 				log.Printf("Failed to save checkpoint: %v", err)
-			}
-
-			// Check for completion - no progress for extended period
-			if noProgressCount >= maxNoProgressTicks {
-				log.Printf("No progress for %d seconds, assuming completion", maxNoProgressTicks*5)
-				select {
-				case completionChan <- true:
-				default:
-				}
-				return
-			}
-
-			// Also check if we've processed all expected records
-			if processed >= totalRecords {
-				log.Printf("All expected records processed (%d/%d)", processed, totalRecords)
-				select {
-				case completionChan <- true:
-				default:
-				}
-				return
 			}
 
 		case <-ctx.Done():
