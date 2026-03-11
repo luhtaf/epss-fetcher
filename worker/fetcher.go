@@ -54,7 +54,7 @@ func (fp *FetcherPool) Start(ctx context.Context, offsetChan <-chan int, totalRe
 func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan <-chan int) {
 	defer func() {
 		if r := recover(); r != nil {
-			fp.errorChan <- fmt.Errorf("worker %d panicked: %v", workerID, r)
+			log.Printf("worker %d panicked: %v", workerID, r)
 		}
 	}()
 
@@ -70,7 +70,11 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 			data, err := fp.fetchWithRetry(ctx, offset)
 			if err != nil {
 				log.Printf("Worker %d: Failed to fetch offset %d: %v", workerID, offset, err)
-				fp.errorChan <- fmt.Errorf("worker %d failed at offset %d: %w", workerID, offset, err)
+				select {
+				case fp.errorChan <- fmt.Errorf("worker %d failed at offset %d: %w", workerID, offset, err):
+				case <-ctx.Done():
+					return
+				}
 				continue
 			}
 

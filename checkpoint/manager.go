@@ -47,6 +47,14 @@ func (m *Manager) Load() error {
 		return fmt.Errorf("failed to read checkpoint file: %w", err)
 	}
 
+	// Handle case where file exists but is perfectly empty
+	if len(data) == 0 {
+		m.checkpoint = &models.Checkpoint{
+			StartTime: time.Now(),
+		}
+		return nil
+	}
+
 	if err := json.Unmarshal(data, m.checkpoint); err != nil {
 		return fmt.Errorf("failed to parse checkpoint: %w", err)
 	}
@@ -69,8 +77,16 @@ func (m *Manager) Save() error {
 		return fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
 
-	if err := os.WriteFile(m.filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write checkpoint file: %w", err)
+	// Write to a temporary file first, then atomically rename it
+	tmpFile := m.filePath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp checkpoint file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, m.filePath); err != nil {
+		// Try to clean up temp file on failure
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to rename temp checkpoint to checkpoint file: %w", err)
 	}
 
 	return nil

@@ -31,6 +31,7 @@ epss-data/
 *stats*.json
 test-*.json
 elasticsearch-*.json
+epss-fetcher
 # Keep go.mod and go.sum (they're not JSON anyway)
 # go.mod and go.sum are automatically included
 
