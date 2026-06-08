@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/luhtaf/epss-fetcher/client"
@@ -18,6 +19,7 @@ type FetcherPool struct {
 	errorChan      chan error
 	completionChan chan bool
 	fetchDate      string // Empty for full mode, YYYY-MM-DD for incremental
+	wg             sync.WaitGroup
 }
 
 func NewFetcherPool(client *client.EPSSClient, cfg *config.Config) *FetcherPool {
@@ -45,13 +47,28 @@ func NewFetcherPoolWithDate(client *client.EPSSClient, cfg *config.Config, date 
 func (fp *FetcherPool) Start(ctx context.Context, offsetChan <-chan int, totalRecords int) (<-chan []models.EPSSData, <-chan error, <-chan bool) {
 	// Start fetcher workers
 	for i := 0; i < fp.config.Workers.Fetchers; i++ {
+		fp.wg.Add(1)
 		go fp.fetchWorker(ctx, i, offsetChan)
 	}
+
+	// Watcher: once every fetcher worker has exited (drained, errored, or
+	// hit an empty page), signal completion so the orchestrator never blocks
+	// forever. The send is panic-safe because completionChan may already be
+	// closed by Close().
+	go func() {
+		fp.wg.Wait()
+		defer func() { _ = recover() }()
+		select {
+		case fp.completionChan <- true:
+		default:
+		}
+	}()
 
 	return fp.outputChan, fp.errorChan, fp.completionChan
 }
 
 func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan <-chan int) {
+	defer fp.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("worker %d panicked: %v", workerID, r)

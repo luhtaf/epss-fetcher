@@ -77,8 +77,10 @@ func (m *Manager) Save() error {
 		return fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
 
-	// Write to a temporary file first, then atomically rename it
-	tmpFile := m.filePath + ".tmp"
+	// Write to a temporary file first, then atomically rename it.
+	// Use a PID-unique temp name so concurrent instances don't race on the
+	// same temp file (which caused "rename ...tmp ...json: no such file" spam).
+	tmpFile := fmt.Sprintf("%s.tmp.%d", m.filePath, os.Getpid())
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp checkpoint file: %w", err)
 	}

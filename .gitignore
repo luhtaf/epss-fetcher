@@ -42,6 +42,13 @@ checkpoint.json
 *-checkpoint.json
 *-stats.txt
 
+# Claude Code
+CLAUDE.md
+
+# Secrets / local-only
+.ssh_upas
+epss-fetcher-linux
+
 # IDE files
 .vscode/
 .idea/
