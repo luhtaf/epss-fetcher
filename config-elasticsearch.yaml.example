@@ -1,0 +1,66 @@
+# EPSS Fetcher - Elasticsearch Configuration
+# ==========================================
+# Copy to config-elasticsearch.yaml and fill in the credentials. That file is
+# git-ignored on purpose -- do not commit it.
+#
+# Credentials are better supplied through the environment than through this
+# file; the env vars win over anything set here:
+#   EPSS_ELASTIC_USERNAME, EPSS_ELASTIC_PASSWORD, EPSS_ELASTIC_HOSTS
+
+workers:
+  fetchers: 8
+  processors: 4
+
+bulk:
+  size: 5000
+  timeout: 60s
+
+strategy: "elasticsearch"
+
+api:
+  base_url: "https://api.first.org/data/v1/epss"
+  rate_limit: 500ms
+  timeout: 30s
+  page_size: 100
+  max_retries: 5
+
+elasticsearch:
+  hosts:
+    # Must be the hostname, not the IP. Traefik routes by Host header; a bare
+    # IP lands on the wildcard ingress instead of Elasticsearch.
+    - "https://elk.th"
+  index: "epss-scores"
+  username: ""           # set via EPSS_ELASTIC_USERNAME
+  password: ""           # set via EPSS_ELASTIC_PASSWORD
+  timeout: 120s
+  skip_tls_verify: true  # the ingress serves a self-signed certificate
+  ca_cert_path: ""       # preferred over skip_tls_verify if you have the CA
+
+  # Optional second write: attach the EPSS fields to an existing CVE inventory
+  # index without touching its other fields. Sent as a separate bulk request,
+  # so a failure here cannot roll back or retry the primary write above.
+  enrich:
+    enabled: false
+    index: "list-cve"
+    mode: "upsert"       # upsert | update | index
+    numeric: true        # store epss/percentile as floats so ranges work
+    field_prefix: ""     # set e.g. "epss_" only if the field names collide
+    fail_on_error: false # best effort; true makes enrich failures fail the batch
+
+json:
+  output_dir: "./epss-data"
+  file_pattern: "epss_batch_%04d.json"
+  format: "ndjson"
+
+retry:
+  max_retries: 5
+  delay: 1s
+  backoff: 2.0
+
+logging:
+  level: "info"
+  output_file: "./elasticsearch-stats.txt"
+
+checkpoint:
+  enabled: true
+  file_path: "./elasticsearch-checkpoint.json"

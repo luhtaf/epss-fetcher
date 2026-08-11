@@ -321,12 +321,22 @@ func (o *Orchestrator) handleResumeMode(ctx context.Context, checkpoint models.C
 	fetchDate = checkpoint.LastDataDate
 
 	if mode == "incremental" && fetchDate != "" {
+		// Only resume a date-scoped run on the day it was started. Otherwise a
+		// single `-date 2024-01-15` invocation would pin every later run to
+		// that date forever, since this branch keeps writing it back.
+		if fetchDate != time.Now().Format("2006-01-02") {
+			log.Printf("Checkpoint date %s is stale, running full mode", fetchDate)
+			return o.handleFullModeFallback(ctx, checkpoint)
+		}
 		totalRecords, err = o.client.GetTotalRecordsForDate(ctx, fetchDate)
 		if err != nil {
 			log.Printf("Failed to resume incremental mode, switching to full mode")
 			return o.handleFullModeFallback(ctx, checkpoint)
 		}
 	} else {
+		// A full run must not carry a date: the fetchers would quietly switch
+		// to the date-scoped API while the run is sized from the full total.
+		fetchDate = ""
 		totalRecords, err = o.client.GetTotalRecords(ctx)
 		if err != nil {
 			err = fmt.Errorf("failed to get total records: %w", err)

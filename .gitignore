@@ -17,10 +17,11 @@
 # Go workspace file
 go.work
 
-# Configuration files (keep examples)
+# Configuration files. config-json.yaml holds no credentials and stays tracked
+# as a preset; anything pointing at Elasticsearch does not.
 config.yaml
-!config.yaml.example
-!config-*.yaml
+config-elasticsearch.yaml
+!*.example
 
 # Data and output files
 # output/

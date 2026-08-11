@@ -47,6 +47,19 @@ type ElasticsearchConfig struct {
 	Timeout       time.Duration `yaml:"timeout"`
 	SkipTLSVerify bool          `yaml:"skip_tls_verify"`
 	CACertPath    string        `yaml:"ca_cert_path"`
+	Enrich        EnrichConfig  `yaml:"enrich"`
+}
+
+// EnrichConfig controls a second, optional bulk write that attaches the EPSS
+// fields to an existing CVE inventory index without disturbing its other
+// fields.
+type EnrichConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Index       string `yaml:"index"`
+	Mode        string `yaml:"mode"`         // "upsert", "update" or "index"
+	Numeric     bool   `yaml:"numeric"`      // write epss/percentile as floats
+	FieldPrefix string `yaml:"field_prefix"` // set if the field names collide
+	FailOnError bool   `yaml:"fail_on_error"`
 }
 
 type JSONConfig struct {
@@ -127,6 +140,17 @@ func (c *Config) overrideWithEnv() {
 	if val := os.Getenv("EPSS_STRATEGY"); val != "" {
 		c.Strategy = val
 	}
+	if val := os.Getenv("EPSS_ENRICH_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			c.Elastic.Enrich.Enabled = b
+		}
+	}
+	if val := os.Getenv("EPSS_ENRICH_INDEX"); val != "" {
+		c.Elastic.Enrich.Index = val
+	}
+	if val := os.Getenv("EPSS_ENRICH_MODE"); val != "" {
+		c.Elastic.Enrich.Mode = val
+	}
 }
 
 func (c *Config) validate() error {
@@ -152,6 +176,19 @@ func (c *Config) validate() error {
 		}
 		if c.Elastic.Index == "" {
 			return fmt.Errorf("elasticsearch.index cannot be empty")
+		}
+		if c.Elastic.Enrich.Enabled {
+			if c.Elastic.Enrich.Index == "" {
+				return fmt.Errorf("elasticsearch.enrich.index cannot be empty when enrich is enabled")
+			}
+			if c.Elastic.Enrich.Index == c.Elastic.Index {
+				return fmt.Errorf("elasticsearch.enrich.index must differ from elasticsearch.index")
+			}
+			switch c.Elastic.Enrich.Mode {
+			case "upsert", "update", "index":
+			default:
+				return fmt.Errorf("elasticsearch.enrich.mode must be 'upsert', 'update' or 'index', got %q", c.Elastic.Enrich.Mode)
+			}
 		}
 	}
 
