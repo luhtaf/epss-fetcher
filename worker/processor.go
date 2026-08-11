@@ -10,6 +10,7 @@ import (
 	"github.com/luhtaf/epss-fetcher/config"
 	"github.com/luhtaf/epss-fetcher/models"
 	"github.com/luhtaf/epss-fetcher/output"
+	"github.com/luhtaf/epss-fetcher/stats"
 )
 
 type ProcessorPool struct {
@@ -18,23 +19,36 @@ type ProcessorPool struct {
 	batchCount int
 	mu         sync.Mutex
 	errorChan  chan error
+	stats      *stats.Tracker
+	wg         sync.WaitGroup
 }
 
-func NewProcessorPool(cfg *config.Config, strategy output.Strategy) *ProcessorPool {
+func NewProcessorPool(cfg *config.Config, strategy output.Strategy, tracker *stats.Tracker) *ProcessorPool {
 	return &ProcessorPool{
 		config:    cfg,
 		strategy:  strategy,
 		errorChan: make(chan error, cfg.Workers.Processors),
+		stats:     tracker,
 	}
 }
 
 func (pp *ProcessorPool) Start(ctx context.Context, inputChan <-chan []models.EPSSData) <-chan error {
 	// Start processor workers
 	for i := 0; i < pp.config.Workers.Processors; i++ {
-		go pp.processWorker(ctx, i, inputChan)
+		pp.wg.Add(1)
+		go func(id int) {
+			defer pp.wg.Done()
+			pp.processWorker(ctx, id, inputChan)
+		}(i)
 	}
 
 	return pp.errorChan
+}
+
+// Wait blocks until every processor worker has exited and flushed its buffer.
+// Call it after the input channel is closed and before Close.
+func (pp *ProcessorPool) Wait() {
+	pp.wg.Wait()
 }
 
 func (pp *ProcessorPool) processWorker(ctx context.Context, workerID int, inputChan <-chan []models.EPSSData) {
@@ -80,9 +94,12 @@ func (pp *ProcessorPool) processWorker(ctx context.Context, workerID int, inputC
 			}
 
 		case <-ctx.Done():
-			// Context cancelled, flush remaining data
+			// Context cancelled. ctx is already dead, so strategy.Write would fail
+			// immediately -- give the final flush its own deadline instead.
 			if len(buffer) > 0 {
-				pp.flushBuffer(ctx, workerID, buffer)
+				flushCtx, cancel := context.WithTimeout(context.Background(), pp.config.Bulk.Timeout)
+				pp.flushBuffer(flushCtx, workerID, buffer)
+				cancel()
 			}
 			return
 		}
@@ -123,18 +140,19 @@ func (pp *ProcessorPool) flushBuffer(ctx context.Context, workerID int, buffer [
 			continue
 		}
 
-		// Success
+		// Success -- only count records that actually reached the output.
+		pp.stats.IncrementProcessed(len(buffer))
 		return
 	}
 
 	// All retries failed
+	pp.stats.IncrementFailed(len(buffer))
 	pp.errorChan <- fmt.Errorf("processor %d: failed to write batch %d after %d retries: %w",
 		workerID, batchID, pp.config.Retry.MaxRetries, lastErr)
 }
 
+// Close closes the error channel. The output strategy is owned by the
+// orchestrator, which closes it -- closing it here too would double-close.
 func (pp *ProcessorPool) Close() {
-	if pp.strategy != nil {
-		pp.strategy.Close()
-	}
 	close(pp.errorChan)
 }

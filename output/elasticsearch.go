@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 
@@ -18,6 +19,22 @@ type ElasticsearchStrategy struct {
 	client *http.Client
 	config *config.ElasticsearchConfig
 	hosts  []string
+}
+
+// bulkResponse is the subset of the _bulk reply we need to tell which
+// individual documents failed. Each item is a single-key map whose key is the
+// action name ("index", "update", ...).
+type bulkResponse struct {
+	Errors bool `json:"errors"`
+	Items  []map[string]struct {
+		Index  string `json:"_index"`
+		ID     string `json:"_id"`
+		Status int    `json:"status"`
+		Error  *struct {
+			Type   string `json:"type"`
+			Reason string `json:"reason"`
+		} `json:"error"`
+	} `json:"items"`
 }
 
 func NewElasticsearchStrategy(cfg *config.ElasticsearchConfig) (*ElasticsearchStrategy, error) {
@@ -104,17 +121,37 @@ func (es *ElasticsearchStrategy) Write(ctx context.Context, batch []models.EPSSD
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("elasticsearch returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("elasticsearch returned status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}
 
-	// Parse response to check for errors
-	var bulkResp map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&bulkResp); err != nil {
+	var br bulkResponse
+	if err := json.NewDecoder(resp.Body).Decode(&br); err != nil {
 		return fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	if errors, ok := bulkResp["errors"].(bool); ok && errors {
-		return fmt.Errorf("bulk request had errors")
+	if !br.Errors {
+		return nil
+	}
+
+	// errors:true means at least one item failed -- not necessarily all of them.
+	// Report how many and why, so the log says something actionable.
+	var failed int
+	var sample string
+	for _, item := range br.Items {
+		for _, res := range item {
+			if res.Error == nil {
+				continue
+			}
+			failed++
+			if sample == "" {
+				sample = fmt.Sprintf("%s (%s: %s)", res.ID, res.Error.Type, res.Error.Reason)
+			}
+		}
+	}
+
+	if failed > 0 {
+		return fmt.Errorf("bulk: %d/%d documents failed, first: %s", failed, len(br.Items), sample)
 	}
 
 	return nil

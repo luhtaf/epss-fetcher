@@ -58,8 +58,6 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 }
 
 func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, forceIncremental bool) error {
-	log.Println("Starting EPSS fetcher...")
-
 	// Load existing checkpoint to determine mode
 	checkpoint := o.checkpointMgr.GetCheckpoint()
 
@@ -92,7 +90,7 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 
 	// Create progress bar
 	remaining := totalRecords - startOffset
-	progressBar := progressbar.DefaultBytes(int64(remaining), "Processing EPSS data")
+	progressBar := progressbar.Default(int64(remaining), "Processing EPSS data")
 
 	// Create offset channel for Stage 1
 	offsetChan := make(chan int, o.config.Workers.Fetchers)
@@ -102,7 +100,7 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 	dataChan, fetchErrorChan, fetchCompletionChan := fetcherPool.Start(ctx, offsetChan, totalRecords)
 
 	// Start Stage 2: Processor workers
-	processorPool := worker.NewProcessorPool(o.config, o.outputStrategy)
+	processorPool := worker.NewProcessorPool(o.config, o.outputStrategy, o.statsTracker)
 	processErrorChan := processorPool.Start(ctx, dataChan)
 
 	// Start offset generator
@@ -122,11 +120,27 @@ func (o *Orchestrator) RunWithMode(ctx context.Context, targetDate string, force
 		log.Println("Processing cancelled")
 	}
 
-	// Cleanup
+	// Cleanup, in dependency order. Each stage must be fully stopped before the
+	// channels it writes to are closed, otherwise a straggler panics on a send
+	// to a closed channel and its batch is lost.
+	//
+	// 1. Wait for the fetchers, then close the channels only they write to.
+	fetcherPool.Wait()
 	fetcherPool.Close()
+
+	// 2. dataChan is now closed, so each processor drains it, flushes whatever
+	//    is left in its buffer, and exits.
+	processorPool.Wait()
+
+	// 3. No writers remain -- safe to close the processors' error channel.
+	//    The output strategy is closed by o.Close(), not here.
 	processorPool.Close()
 
-	// Save final checkpoint and stats
+	// Save final checkpoint and stats. Record the final counts first -- the 5s
+	// progress monitor may have missed the last few batches.
+	finalStats := o.statsTracker.GetStats()
+	o.checkpointMgr.UpdateProgress(startOffset+finalStats.Processed, totalRecords, finalStats.Processed)
+
 	if err := o.checkpointMgr.Save(); err != nil {
 		log.Printf("Failed to save checkpoint: %v", err)
 	}
@@ -154,16 +168,32 @@ func (o *Orchestrator) generateOffsets(ctx context.Context, offsetChan chan<- in
 
 func (o *Orchestrator) handleErrors(ctx context.Context, fetchErrorChan, processErrorChan <-chan error) {
 	for {
+		// A closed channel is set to nil so the select stops busy-looping on it;
+		// receiving from a nil channel blocks forever.
+		if fetchErrorChan == nil && processErrorChan == nil {
+			return
+		}
+
 		select {
-		case err := <-fetchErrorChan:
+		case err, ok := <-fetchErrorChan:
+			if !ok {
+				fetchErrorChan = nil
+				continue
+			}
 			if err != nil {
 				log.Printf("Fetch error: %v", err)
+				// A failed fetch means a whole page never arrived.
 				o.statsTracker.IncrementFailed(o.config.API.PageSize)
 			}
-		case err := <-processErrorChan:
+		case err, ok := <-processErrorChan:
+			if !ok {
+				processErrorChan = nil
+				continue
+			}
 			if err != nil {
+				// The processor already counted the exact number of records it
+				// dropped -- counting again here would double it.
 				log.Printf("Process error: %v", err)
-				o.statsTracker.IncrementFailed(o.config.Bulk.Size)
 			}
 		case <-ctx.Done():
 			return
@@ -201,6 +231,12 @@ func (o *Orchestrator) monitorProgressSimple(ctx context.Context, progressBar *p
 			return
 		}
 	}
+}
+
+// Stats returns a snapshot of the run's counters, so callers can tell a
+// complete run from a silently truncated one.
+func (o *Orchestrator) Stats() models.ProcessingStats {
+	return o.statsTracker.GetStats()
 }
 
 func (o *Orchestrator) Close() error {

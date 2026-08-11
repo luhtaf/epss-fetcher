@@ -20,6 +20,7 @@ type FetcherPool struct {
 	completionChan chan bool
 	fetchDate      string // Empty for full mode, YYYY-MM-DD for incremental
 	wg             sync.WaitGroup
+	watcherWg      sync.WaitGroup // the completion watcher started by Start
 }
 
 func NewFetcherPool(client *client.EPSSClient, cfg *config.Config) *FetcherPool {
@@ -53,14 +54,16 @@ func (fp *FetcherPool) Start(ctx context.Context, offsetChan <-chan int, totalRe
 
 	// Watcher: once every fetcher worker has exited (drained, errored, or
 	// hit an empty page), signal completion so the orchestrator never blocks
-	// forever. The send is panic-safe because completionChan may already be
-	// closed by Close().
+	// forever. Wait tracks this goroutine too, so Close cannot close
+	// completionChan while the send below is still in flight.
+	fp.watcherWg.Add(1)
 	go func() {
+		defer fp.watcherWg.Done()
 		fp.wg.Wait()
-		defer func() { _ = recover() }()
 		select {
 		case fp.completionChan <- true:
 		default:
+			// Buffer already holds a signal from a worker -- nothing to do.
 		}
 	}()
 
@@ -96,19 +99,14 @@ func (fp *FetcherPool) fetchWorker(ctx context.Context, workerID int, offsetChan
 			}
 
 			if len(data) > 0 {
+				// Blocking send: if outputChan is full the fetcher waits for the
+				// processors to catch up. That backpressure is intentional -- never
+				// add a default clause here, it silently drops batches.
 				select {
 				case fp.outputChan <- data:
 					// Data sent successfully
 				case <-ctx.Done():
 					return
-				default:
-					// Channel might be closed, try non-blocking send
-					select {
-					case fp.outputChan <- data:
-					default:
-						log.Printf("Worker %d: Output channel closed, dropping batch", workerID)
-						return
-					}
 				}
 			} else {
 				// Empty data received - API has no more records
@@ -175,6 +173,14 @@ func (fp *FetcherPool) fetchWithRetry(ctx context.Context, offset int) ([]models
 	}
 
 	return nil, fmt.Errorf("exhausted retries for offset %d: %w", offset, lastErr)
+}
+
+// Wait blocks until every fetch worker and the completion watcher have exited.
+// Call it before Close so nothing is still writing to the channels when they
+// are closed.
+func (fp *FetcherPool) Wait() {
+	fp.wg.Wait()
+	fp.watcherWg.Wait()
 }
 
 func (fp *FetcherPool) Close() {

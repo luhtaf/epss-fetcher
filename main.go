@@ -65,5 +65,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A run that wrote fewer records than the API advertised is a failure, even
+	// though nothing errored out. Exit non-zero so cron can actually notice.
+	if st := orch.Stats(); ctx.Err() == nil && st.TotalRecords > 0 && st.Processed < st.TotalRecords {
+		log.Printf("INCOMPLETE: processed %d/%d records", st.Processed, st.TotalRecords)
+		os.Exit(2)
+	}
+
 	log.Println("EPSS fetcher completed successfully")
 }
